@@ -1,15 +1,18 @@
 package com.wse.gridfs;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.UnknownHostException;
+import java.util.List;
 import java.util.UUID;
 
 import org.vertx.java.busmods.BusModBase;
 import org.vertx.java.core.Handler;
 import org.vertx.java.core.buffer.Buffer;
 import org.vertx.java.core.eventbus.Message;
+import org.vertx.java.core.file.FileSystem;
 import org.vertx.java.core.json.JsonObject;
 
 import com.mongodb.DB;
@@ -63,6 +66,52 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			logger.error("Failed to connect to mongo server", e);
 		}
 		eb.registerHandler(address, this);
+		eb.registerHandler(address + ".json", new Handler<Message<JsonObject>>() {
+			@Override
+			public void handle(Message<JsonObject> message) {
+				String action = message.body().getString("action", "");
+				switch (action) {
+					case "write" :
+						writeTo(message);
+						break;
+					default:
+						sendError(message, "Invalid action");
+				}
+			}
+		});
+	}
+
+	private void writeTo(Message<JsonObject> message) {
+		String path = message.body().getString("path");
+		if (path == null) {
+			sendError(message, "Invalid output path.");
+			return;
+		}
+		JsonObject query = message.body().getObject("query");
+		if (query == null) {
+			sendError(message, "Invalid query.");
+			return;
+		}
+		JsonObject alias = message.body().getObject("alias", new JsonObject());
+		boolean renameIfExists = message.body().getBoolean("rename-if-exists", true);
+		GridFS fs = new GridFS(db, bucket);
+		try {
+			List<GridFSDBFile> files = fs.find(jsonToDBObject(query));
+			FileSystem fileSystem = vertx.fileSystem();
+			for (GridFSDBFile f : files) {
+				String a = alias.getString(f.getId().toString());
+				String p = path + File.separator + ((a != null) ? a : f.getFilename());
+				if (renameIfExists &&  fileSystem.existsSync(p)) {
+					p = path + File.separator + f.getId().toString() + "_" +
+							((a != null) ? a : f.getFilename());
+				}
+				f.writeTo(p);
+			}
+			sendOK(message, new JsonObject().putNumber("number", files.size()));
+		} catch (IOException | MongoException e) {
+			logger.error(e.getMessage(), e);
+			sendError(message, e.getMessage());
+		}
 	}
 
 	public void stop() {
