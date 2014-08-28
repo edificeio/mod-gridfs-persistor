@@ -162,6 +162,10 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		GridFS fs = new GridFS(db, bucket);
 		try {
 			GridFSDBFile f = fs.findOne(jsonToDBObject(query));
+			if (f == null) {
+				replyError(message, "File not found with query : " + query.encode());
+				return;
+			}
 			ByteArrayOutputStream os = new ByteArrayOutputStream();
 			f.writeTo(os);
 			message.reply(new Buffer(os.toByteArray()));
@@ -200,6 +204,10 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		GridFS fs = new GridFS(db, bucket);
 		try {
 			GridFSDBFile f = fs.findOne(jsonToDBObject(query));
+			if (f == null) {
+				replyError(message, "File not found with query : " + query.encode());
+				return;
+			}
 			ByteArrayOutputStream os = new ByteArrayOutputStream();
 			f.writeTo(os);
 			JsonObject j = new JsonObject();
