@@ -9,10 +9,11 @@ test {
 
 def configurePom(def pom) {
 	pom.project {
+    name 'mod-gridfs-persistor'
 		description 'GridFS Persitor BusMod for Vert.x'
 		inceptionYear '2013'
 		packaging 'zip'
-		url 'http://code.web-education.net/projects/one-core'
+    url 'https://github.com/web-education/mod-gridfs-persistor'
 
 		developers {
 			developer {
@@ -23,13 +24,15 @@ def configurePom(def pom) {
 		}
 
 		scm {
-			url 'git@code.web-education.net:one/one-core.git'
+      connection 'scm:git:ssh://git@github.com:web-education/mod-gridfs-persistor.git'
+      developerConnection 'scm:git:ssh://git@github.com:web-education/mod-gridfs-persistor.git'
+      url 'https://github.com/web-education/mod-gridfs-persistor.git'
 		}
 
 		licenses {
 			license {
-				name 'GNU Affero General Public License, Version 2.0'
-				url 'https://www.gnu.org/licenses/agpl.txt'
+        name 'The Apache Software License, Version 2.0'
+        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
 				distribution 'repo'
 			}
 		}
