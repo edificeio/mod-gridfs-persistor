@@ -1,4 +1,4 @@
-package com.wse.gridfs;
+package fr.wseduc.gridfs;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;

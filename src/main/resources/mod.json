@@ -1,6 +1,6 @@
 {
-	"main" : "com.wse.gridfs.GridFSPersistor",
+	"main" : "fr.wseduc.gridfs.GridFSPersistor",
 	"worker": true,
 	"preserve-cwd" : true,
-	"address" : "wse.gridfs.persistor"
+	"address" : "gridfs.persistor"
 }
