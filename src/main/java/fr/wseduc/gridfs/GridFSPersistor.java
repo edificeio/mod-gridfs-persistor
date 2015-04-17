@@ -21,27 +21,25 @@ import java.io.File;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.mongodb.*;
 import org.vertx.java.busmods.BusModBase;
 import org.vertx.java.core.Handler;
 import org.vertx.java.core.buffer.Buffer;
 import org.vertx.java.core.eventbus.Message;
 import org.vertx.java.core.file.FileSystem;
+import org.vertx.java.core.json.JsonArray;
 import org.vertx.java.core.json.JsonObject;
 
-import com.mongodb.DB;
-import com.mongodb.DBObject;
-import com.mongodb.Mongo;
-import com.mongodb.MongoClient;
-import com.mongodb.MongoClientOptions;
-import com.mongodb.MongoException;
-import com.mongodb.ServerAddress;
 import com.mongodb.gridfs.GridFS;
 import com.mongodb.gridfs.GridFSDBFile;
 import com.mongodb.gridfs.GridFSInputFile;
 import com.mongodb.util.JSON;
+
+import javax.net.ssl.SSLSocketFactory;
 
 public class GridFSPersistor extends BusModBase implements Handler<Message<Buffer>> {
 
@@ -66,14 +64,34 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		dbName = getOptionalStringConfig("db_name", "default_db");
 		username = getOptionalStringConfig("username", null);
 		password = getOptionalStringConfig("password", null);
+		ReadPreference readPreference = ReadPreference.valueOf(
+				getOptionalStringConfig("read_preference", "primary"));
 		int poolSize = getOptionalIntConfig("pool_size", 10);
+		boolean autoConnectRetry = getOptionalBooleanConfig("auto_connect_retry", true);
+		int socketTimeout = getOptionalIntConfig("socket_timeout", 60000);
+		boolean useSSL = getOptionalBooleanConfig("use_ssl", false);
+		JsonArray seedsProperty = config.getArray("seeds");
 		bucket = getOptionalStringConfig("bucket", "fs");
 
 		try {
 			MongoClientOptions.Builder builder = new MongoClientOptions.Builder();
 			builder.connectionsPerHost(poolSize);
-			ServerAddress address = new ServerAddress(host, port);
-			mongo = new MongoClient(address, builder.build());
+			builder.autoConnectRetry(autoConnectRetry);
+			builder.socketTimeout(socketTimeout);
+			builder.readPreference(readPreference);
+
+			if (useSSL) {
+				builder.socketFactory(SSLSocketFactory.getDefault());
+			}
+
+			if (seedsProperty == null) {
+				ServerAddress address = new ServerAddress(host, port);
+				mongo = new MongoClient(address, builder.build());
+			} else {
+				List<ServerAddress> seeds = makeSeeds(seedsProperty);
+				mongo = new MongoClient(seeds, builder.build());
+			}
+
 			db = mongo.getDB(dbName);
 			if (username != null && password != null) {
 				db.authenticate(username, password.toCharArray());
@@ -95,6 +113,17 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 				}
 			}
 		});
+	}
+
+	private List<ServerAddress> makeSeeds(JsonArray seedsProperty) throws UnknownHostException {
+		List<ServerAddress> seeds = new ArrayList<>();
+		for (Object elem : seedsProperty) {
+			JsonObject address = (JsonObject) elem;
+			String host = address.getString("host");
+			int port = address.getInteger("port");
+			seeds.add(new ServerAddress(host, port));
+		}
+		return seeds;
 	}
 
 	private void writeTo(Message<JsonObject> message) {
