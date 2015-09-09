@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,6 +44,8 @@ import javax.net.ssl.SSLSocketFactory;
 
 public class GridFSPersistor extends BusModBase implements Handler<Message<Buffer>> {
 
+	public static final String CHUNKS = ".chunks";
+	public static final String FILES = ".files";
 	protected String address;
 	protected String host;
 	protected int port;
@@ -181,6 +184,15 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			case "save":
 				persistFile(message, data, json);
 				break;
+			case "saveChunk":
+				persistChunk(message, data, json);
+				break;
+			case "getChunk":
+				getChunk(message, json);
+				break;
+			case "countChunks":
+				countChunks(message, json);
+				break;
 			case "findone":
 				getFile(message, json);
 				break;
@@ -197,6 +209,92 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		} else {
 			replyError(message, "Invalid message");
 		}
+	}
+
+	private void persistChunk(Message<Buffer> message, byte[] data, JsonObject json) {
+		final Integer n = json.getInteger("n");
+		if (n == null) {
+			replyError(message, "Invalid chunk number");
+			return;
+		}
+		final String id = json.getString("_id");
+		if (id == null || id.trim().isEmpty()) {
+			replyError(message, "Invalid file id");
+			return;
+		}
+		if (n == 0) {
+			try {
+				saveFile(json, data.length);
+			} catch (MongoException e) {
+				logger.error(e.getMessage(), e);
+				replyError(message, e.getMessage());
+				return;
+			}
+		}
+		try {
+			DBObject chunk = BasicDBObjectBuilder.start()
+					.add("files_id", id)
+					.add("n", n)
+					.add("data", data).get();
+			DBCollection collection = db.getCollection(bucket + CHUNKS);
+			collection.save(chunk);
+			replyOK(message, new JsonObject());
+		} catch (RuntimeException e) {
+			logger.error(e.getMessage(), e);
+			replyError(message, e.getMessage());
+		}
+	}
+
+	private void saveFile(JsonObject json, long chunkSize) {
+		json.putNumber("chunkSize", chunkSize);
+		json.removeField("n");
+		if (json.getString("content-type") != null) {
+			json.putString("contentType", json.getString("content-type"));
+			json.removeField("content-type");
+		}
+		DBObject file = jsonToDBObject(json);
+		file.put("uploadDate", new Date());
+		DBCollection collection = db.getCollection(bucket + FILES);
+		collection.save(file);
+	}
+
+	private void countChunks(Message<Buffer> message, JsonObject json) {
+		String filesId = json.getString("files_id");
+		if (filesId == null || filesId.trim().isEmpty()) {
+			replyError(message, "Invalid file id.");
+			return;
+		}
+		try {
+			DBObject file = BasicDBObjectBuilder.start("files_id", filesId).get();
+			DBCollection collection = db.getCollection(bucket + CHUNKS);
+			long count = collection.count(file);
+			message.reply(count);
+		} catch (RuntimeException e) {
+			logger.error(e.getMessage(), e);
+			replyError(message, e.getMessage());
+		}
+	}
+
+	private void getChunk(Message<Buffer> message, JsonObject json) {
+		String filesId = json.getString("files_id");
+		if (filesId == null || filesId.trim().isEmpty()) {
+			replyError(message, "Invalid file id.");
+			return;
+		}
+		Long n = json.getLong("n");
+		if (n == null) {
+			replyError(message, "Invalid chunk number.");
+			return;
+		}
+		DBCollection collection = db.getCollection(bucket + CHUNKS);
+		DBObject chunk = collection.findOne(BasicDBObjectBuilder
+				.start("files_id", filesId).add("n", n).get());
+		if (chunk == null) {
+			replyError(message, "Error getting chunk number " + n + " in file  " + filesId);
+			return;
+		}
+		logger.debug("chunk : " + chunk);
+		message.reply(new Buffer((byte[]) chunk.get("data")));
 	}
 
 	private void getFile(Message<Buffer> message, JsonObject json) {
