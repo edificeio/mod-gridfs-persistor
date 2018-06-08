@@ -1,44 +1,107 @@
-apply from: "gradle/vertx.gradle"
 
+plugins {
+  id 'java'
+  id 'maven'
+  id 'maven-publish'
+  id 'com.github.johnrengelman.shadow' version '2.0.1'
+}
+
+if (!hasProperty('odeUsername')) {
+  ext.odeUsername = ''
+}
+if (!hasProperty('odePassword')) {
+  ext.odePassword = ''
+}
+
+repositories {
+  mavenLocal()
+    maven {
+      url "https://maven.opendigitaleducation.com/nexus/content/groups/public"
+    }
+  mavenCentral()
+    maven {
+      url "https://oss.sonatype.org/content/repositories/iovertx-3720/"
+    }
+    maven {
+      url "https://oss.sonatype.org/content/repositories/snapshots"
+    }
+}
+
+configurations {
+  provided
+    runtime.exclude module: 'vertx-core'
+}
+
+sourceSets {
+  main { compileClasspath += configurations.provided }
+}
+
+configurations.all {
+  resolutionStrategy.cacheChangingModulesFor 0, 'seconds'
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+compileJava {
+  sourceCompatibility = project.sourceCompatibility
+    targetCompatibility = project.targetCompatibility
+}
+
+compileTestJava {
+  sourceCompatibility = project.sourceCompatibility
+    targetCompatibility = project.targetCompatibility
+}
 dependencies {
-  compile "org.mongodb:mongo-java-driver:$mongoDbVersion"
+  compileOnly "io.vertx:vertx-core:$vertxVersion"
+  compile "fr.wseduc:web-utils:$webutilsVersion"
+  compile "org.mongodb:mongo-java-driver:$mongoVersion"
 }
 
-test {
+jar {
+  manifest {
+    attributes(
+        "Main-Verticle": "service:mod"
+        )
+  }
 }
 
-def configurePom(def pom) {
-	pom.project {
-    name 'mod-gridfs-persistor'
-		description 'GridFS Persitor BusMod for Vert.x'
-		inceptionYear '2013'
-		packaging 'zip'
-    url 'https://github.com/web-education/mod-gridfs-persistor'
-
-		developers {
-			developer {
-				id 'dboissin'
-				name 'Damien BOISSIN'
-				email 'damien.boissin@web-educcation.net'
-			}
-		}
-
-		scm {
-      connection 'scm:git:ssh://git@github.com:web-education/mod-gridfs-persistor.git'
-      developerConnection 'scm:git:ssh://git@github.com:web-education/mod-gridfs-persistor.git'
-      url 'https://github.com/web-education/mod-gridfs-persistor.git'
-		}
-
-		licenses {
-			license {
-        name 'The Apache Software License, Version 2.0'
-        url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-				distribution 'repo'
-			}
-		}
-
-		properties {
-			setProperty('project.build.sourceEncoding', 'UTF8')
-		}
-	}
+shadowJar {
+  classifier = 'fat'
+    archiveName = "${modowner}~${modname}~$version-$classifier.$extension"
+    mergeServiceFiles {
+      include 'META-INF/services/io.vertx.core.spi.VerticleFactory'
+    }
 }
+
+publishing {
+  repositories {
+    if (version.endsWith("SNAPSHOT")) {
+      maven {
+        name 'Snapshots'
+          url 'https://maven.opendigitaleducation.com/nexus/content/repositories/snapshots/'
+          credentials {
+            username "${odeUsername}"
+              password "${odePassword}"
+          }
+      }
+    } else {
+      maven {
+        name 'Releases'
+          url 'https://maven.opendigitaleducation.com/nexus/content/repositories/releases/'
+          credentials {
+            username "${odeUsername}"
+              password "${odePassword}"
+          }
+      }
+    }
+  }
+  publications {
+    maven(MavenPublication) {
+      groupId "${modowner}"
+      artifactId "${modname}"
+      artifact("build/libs/${modowner}~${modname}~$version-fat.jar") { classifier "fat" }
+    }
+  }
+}
+

@@ -27,18 +27,18 @@ import java.util.List;
 import java.util.UUID;
 
 import com.mongodb.*;
-import org.vertx.java.busmods.BusModBase;
-import org.vertx.java.core.Handler;
-import org.vertx.java.core.buffer.Buffer;
-import org.vertx.java.core.eventbus.Message;
-import org.vertx.java.core.file.FileSystem;
-import org.vertx.java.core.json.JsonArray;
-import org.vertx.java.core.json.JsonObject;
+import io.vertx.core.Handler;
+import io.vertx.core.buffer.Buffer;
+import io.vertx.core.eventbus.Message;
+import io.vertx.core.file.FileSystem;
+import io.vertx.core.json.JsonArray;
+import io.vertx.core.json.JsonObject;
 
 import com.mongodb.gridfs.GridFS;
 import com.mongodb.gridfs.GridFSDBFile;
 import com.mongodb.gridfs.GridFSInputFile;
 import com.mongodb.util.JSON;
+import org.vertx.java.busmods.BusModBase;
 
 import javax.net.ssl.SSLSocketFactory;
 
@@ -73,7 +73,7 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		boolean autoConnectRetry = getOptionalBooleanConfig("auto_connect_retry", true);
 		int socketTimeout = getOptionalIntConfig("socket_timeout", 60000);
 		boolean useSSL = getOptionalBooleanConfig("use_ssl", false);
-		JsonArray seedsProperty = config.getArray("seeds");
+		JsonArray seedsProperty = config.getJsonArray("seeds");
 		bucket = getOptionalStringConfig("bucket", "fs");
 
 		try {
@@ -102,8 +102,8 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		} catch (UnknownHostException e) {
 			logger.error("Failed to connect to mongo server", e);
 		}
-		eb.registerHandler(address, this);
-		eb.registerHandler(address + ".json", new Handler<Message<JsonObject>>() {
+		eb.consumer(address, this);
+		eb.consumer(address + ".json", new Handler<Message<JsonObject>>() {
 			@Override
 			public void handle(Message<JsonObject> message) {
 				String action = message.body().getString("action", "");
@@ -135,12 +135,12 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			sendError(message, "Invalid output path.");
 			return;
 		}
-		JsonObject query = message.body().getObject("query");
+		JsonObject query = message.body().getJsonObject("query");
 		if (query == null) {
 			sendError(message, "Invalid query.");
 			return;
 		}
-		JsonObject alias = message.body().getObject("alias", new JsonObject());
+		JsonObject alias = message.body().getJsonObject("alias", new JsonObject());
 		boolean renameIfExists = message.body().getBoolean("rename-if-exists", true);
 		GridFS fs = new GridFS(db, bucket);
 		try {
@@ -149,13 +149,13 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			for (GridFSDBFile f : files) {
 				String a = alias.getString(f.getId().toString());
 				String p = path + File.separator + ((a != null) ? a : f.getFilename());
-				if (renameIfExists &&  fileSystem.existsSync(p)) {
+				if (renameIfExists &&  fileSystem.existsBlocking(p)) {
 					p = path + File.separator + f.getId().toString() + "_" +
 							((a != null) ? a : f.getFilename());
 				}
 				f.writeTo(p);
 			}
-			sendOK(message, new JsonObject().putNumber("number", files.size()));
+			sendOK(message, new JsonObject().put("number", files.size()));
 		} catch (IOException | MongoException e) {
 			logger.error(e.getMessage(), e);
 			sendError(message, e.getMessage());
@@ -176,7 +176,7 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			try {
 				json = new JsonObject(new String(header, "UTF-8"));
 			} catch (UnsupportedEncodingException e) {
-				container.logger().error(e.getMessage(), e);
+				logger.error(e.getMessage(), e);
 			}
 			byte [] data = content.getBytes(0, content.length() - 4 - headerSize);
 
@@ -246,11 +246,11 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 	}
 
 	private void saveFile(JsonObject json, long chunkSize) {
-		json.putNumber("chunkSize", chunkSize);
-		json.removeField("n");
+		json.put("chunkSize", chunkSize);
+		json.remove("n");
 		if (json.getString("content-type") != null) {
-			json.putString("contentType", json.getString("content-type"));
-			json.removeField("content-type");
+			json.put("contentType", json.getString("content-type"));
+			json.remove("content-type");
 		}
 		DBObject file = jsonToDBObject(json);
 		file.put("uploadDate", new Date());
@@ -294,11 +294,11 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			return;
 		}
 		logger.debug("chunk : " + chunk);
-		message.reply(new Buffer((byte[]) chunk.get("data")));
+		message.reply(Buffer.buffer((byte[]) chunk.get("data")));
 	}
 
 	private void getFile(Message<Buffer> message, JsonObject json) {
-		JsonObject query = json.getObject("query");
+		JsonObject query = json.getJsonObject("query");
 		if (query == null) {
 			return;
 		}
@@ -311,14 +311,14 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			}
 			ByteArrayOutputStream os = new ByteArrayOutputStream();
 			f.writeTo(os);
-			message.reply(new Buffer(os.toByteArray()));
+			message.reply(Buffer.buffer(os.toByteArray()));
 		} catch (IOException | MongoException e) {
-			container.logger().error(e.getMessage(), e);
-			JsonObject j = new JsonObject().putString("status", "error").putString("message", e.getMessage());
+			logger.error(e.getMessage(), e);
+			JsonObject j = new JsonObject().put("status", "error").put("message", e.getMessage());
 			try {
-				message.reply(new Buffer(j.encode().getBytes("UTF-8")));
+				message.reply(Buffer.buffer(j.encode().getBytes("UTF-8")));
 			} catch (UnsupportedEncodingException e1) {
-				container.logger().error(e1.getMessage(), e1);
+				logger.error(e1.getMessage(), e1);
 			}
 		}
 	}
@@ -335,12 +335,12 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		f.setFilename(header.getString("filename"));
 		f.save();
 		JsonObject reply = new JsonObject();
-		reply.putString("_id", id);
+		reply.put("_id", id);
 		replyOK(message, reply);
 	}
 
 	private void copyFile(Message<Buffer> message, JsonObject json) {
-		JsonObject query = json.getObject("query");
+		JsonObject query = json.getJsonObject("query");
 		if (query == null) {
 			return;
 		}
@@ -354,8 +354,8 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 			ByteArrayOutputStream os = new ByteArrayOutputStream();
 			f.writeTo(os);
 			JsonObject j = new JsonObject();
-			j.putString("content-type", f.getContentType());
-			j.putString("filename", f.getFilename());
+			j.put("content-type", f.getContentType());
+			j.put("filename", f.getFilename());
 			persistFile(message, os.toByteArray(), j);
 		} catch (IOException | MongoException e) {
 			replyError(message, e.getMessage());
@@ -363,7 +363,7 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 	}
 
 	private void removeFile(Message<Buffer> message, JsonObject json) {
-		JsonObject query = json.getObject("query");
+		JsonObject query = json.getJsonObject("query");
 		if (query == null) {
 			return;
 		}
@@ -385,13 +385,13 @@ public class GridFSPersistor extends BusModBase implements Handler<Message<Buffe
 		if (reply == null) {
 			reply = new JsonObject();
 		}
-		reply.putString("status", "ok");
+		reply.put("status", "ok");
 		message.reply(reply);
 	}
 
 	protected void replyError(Message<Buffer> message, String error) {
 		logger.error(error);
-		JsonObject json = new JsonObject().putString("status", "error").putString("message", error);
+		JsonObject json = new JsonObject().put("status", "error").put("message", error);
 		message.reply(json);
 	}
 }
