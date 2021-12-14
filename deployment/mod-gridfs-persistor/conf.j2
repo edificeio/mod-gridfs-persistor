@@ -1,0 +1,14 @@
+{
+    "name": "{{ modGridfsPersistorVersion }}",
+    "priority": 2,
+    "waitDeploy" : true,
+    "worker": true,
+    "multi-threaded": true,
+    "config": {
+        "address": "wse.gridfs.persistor",
+        "host": "{{ ipMongodb }}",
+        "port": 27017,
+        "db_name": "{{ dbName }}",
+        "pool_size": 10
+    }
+}
